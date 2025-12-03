@@ -35,6 +35,10 @@ class _CameraScreenState extends State<CameraScreen> {
   // Audio
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // Trial time
+  int _trialMinutes = 1;
+  int _trialSeconds = 0;
+
   @override
   void initState() {
     super.initState();
@@ -378,6 +382,38 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
               ),
             ],
+          ),
+
+          // Trial Left Button di atas
+          Positioned(
+            top: 20,
+            left: 20,
+            right: 20,
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(25),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 10,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Text(
+                  'Trial Left : ${_trialMinutes.toString().padLeft(2, '0')}:${_trialSeconds.toString().padLeft(2, '0')}',
+                  style: const TextStyle(
+                    color: Colors.blue,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
           ),
 
           // Status Command di atas
