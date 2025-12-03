@@ -236,7 +236,13 @@ class _CameraScreenState extends State<CameraScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 2 Tombol Penuh Layar (KIRI & KANAN)
+          // Camera preview tunggal sebagai background
+          if (_isCameraInitialized)
+            Positioned.fill(
+              child: CameraPreview(_cameraController!),
+            ),
+
+          // 2 Tombol Penuh Layar (KIRI & KANAN) dengan overlay
           Row(
             children: [
               // ========== TOMBOL KIRI: COMMAND ==========
@@ -247,12 +253,6 @@ class _CameraScreenState extends State<CameraScreen> {
                     color: Colors.transparent,
                     child: Stack(
                       children: [
-                        // Camera preview untuk sisi kiri
-                        if (_isCameraInitialized)
-                          Positioned.fill(
-                            child: CameraPreview(_cameraController!),
-                          ),
-
                         // Overlay gradient biru untuk Command
                         Positioned.fill(
                           child: Container(
@@ -327,12 +327,6 @@ class _CameraScreenState extends State<CameraScreen> {
                     color: Colors.transparent,
                     child: Stack(
                       children: [
-                        // Camera preview untuk sisi kanan
-                        if (_isCameraInitialized)
-                          Positioned.fill(
-                            child: CameraPreview(_cameraController!),
-                          ),
-
                         // Overlay gradient merah untuk SOS
                         Positioned.fill(
                           child: Container(
