@@ -5,14 +5,15 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:math' as math;
 import 'package:oureye/screens/camera_screen.dart';
 
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+class AuthenticatedSplashScreen extends StatefulWidget {
+  const AuthenticatedSplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  State<AuthenticatedSplashScreen> createState() =>
+      _AuthenticatedSplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
+class _AuthenticatedSplashScreenState extends State<AuthenticatedSplashScreen>
     with TickerProviderStateMixin {
   late AnimationController _rotationController;
   late AnimationController _pulseController;
@@ -64,7 +65,7 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _announceInstruction() async {
     try {
       await _tts.setLanguage('id-ID');
-      await _tts.setSpeechRate(0.5);
+      await _tts.setSpeechRate(0.9);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
 
@@ -89,7 +90,7 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       // TTS: "Menyiapkan aplikasi"
       await _tts.setLanguage('id-ID');
-      await _tts.setSpeechRate(0.5);
+      await _tts.setSpeechRate(0.9);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
       await _tts.speak("Menyiapkan aplikasi");
@@ -113,7 +114,7 @@ class _SplashScreenState extends State<SplashScreen>
       await _audioPlayer.stop();
 
       await _tts.setLanguage('id-ID');
-      await _tts.setSpeechRate(0.5);
+      await _tts.setSpeechRate(0.9);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
       await _tts.speak("Aplikasi siap");
@@ -126,7 +127,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const CameraScreen()),
+        MaterialPageRoute(builder: (_) => const CameraScreen(isTrial: false)),
       );
     }
   }

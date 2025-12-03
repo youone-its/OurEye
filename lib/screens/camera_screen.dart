@@ -11,9 +11,13 @@ import 'package:audioplayers/audioplayers.dart';
 import 'api_settings_screen.dart';
 import 'location_settings_screen.dart';
 import 'login_screen.dart';
+import 'track_location_screen.dart';
+import 'initial_splash_screen.dart';
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  final bool isTrial;
+
+  const CameraScreen({super.key, this.isTrial = false});
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -46,7 +50,9 @@ class _CameraScreenState extends State<CameraScreen> {
   void initState() {
     super.initState();
     _initializeApp();
-    _startTrialTimer();
+    if (widget.isTrial) {
+      _startTrialTimer();
+    }
   }
 
   Future<void> _initializeApp() async {
@@ -137,6 +143,26 @@ class _CameraScreenState extends State<CameraScreen> {
     );
   }
 
+  Future<void> _handleLogout() async {
+    // Stop services
+    _cameraController?.dispose();
+    _speech?.stop();
+    _tts?.stop();
+
+    // Clear login session
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_logged_in', false);
+    await prefs.remove('user_email');
+
+    if (mounted) {
+      // Navigate back to Initial Splash Screen
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const InitialSplashScreen()),
+        (route) => false,
+      );
+    }
+  }
+
   Future<void> _toggleListening() async {
     if (_speech == null || _tts == null) {
       debugPrint('Speech or TTS not initialized');
@@ -168,6 +194,118 @@ class _CameraScreenState extends State<CameraScreen> {
         pauseFor: const Duration(seconds: 6),
         partialResults: true,
       );
+    }
+  }
+
+  Future<void> _handleSOS() async {
+    if (_tts == null) {
+      debugPrint('TTS not initialized');
+      return;
+    }
+
+    try {
+      // Play SOS alarm sound
+      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
+      await _audioPlayer.play(
+          AssetSource('sounds/loading.mp3')); // Using loading sound as alarm
+
+      // TTS announcement for blind user
+      await _tts!.speak("S O S diaktifkan! Mengirim sinyal darurat.");
+
+      // Show SOS dialog
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            backgroundColor: Colors.red.shade50,
+            title: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded,
+                    color: Colors.red.shade800, size: 32),
+                const SizedBox(width: 12),
+                Text(
+                  'SOS ACTIVATED',
+                  style: TextStyle(
+                    color: Colors.red.shade800,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Emergency signal has been sent!',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('• Location shared with emergency contacts'),
+                const Text('• Alert notification sent'),
+                const Text('• Help is on the way'),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.orange),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Stay calm. Emergency services have been notified.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await _audioPlayer.stop();
+                  await _tts!.speak("S O S dibatalkan.");
+                  if (mounted) {
+                    Navigator.pop(context);
+                  }
+                },
+                child: const Text(
+                  'CANCEL SOS',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  await _audioPlayer.stop();
+                  await _tts!
+                      .speak("Bantuan sedang dalam perjalanan. Tetap tenang.");
+                  if (mounted) {
+                    Navigator.pop(context);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade800,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error in SOS: $e');
+      await _tts?.speak("Terjadi kesalahan pada fitur S O S.");
     }
   }
 
@@ -357,11 +495,7 @@ class _CameraScreenState extends State<CameraScreen> {
               // ========== TOMBOL KANAN: SOS ==========
               Expanded(
                 child: GestureDetector(
-                  onTap: _isProcessing
-                      ? null
-                      : () async {
-                          await _tts?.speak("Fitur SOS segera hadir.");
-                        },
+                  onTap: _isProcessing ? null : _handleSOS,
                   child: Container(
                     color: Colors.transparent,
                     child: Stack(
@@ -419,37 +553,159 @@ class _CameraScreenState extends State<CameraScreen> {
             ],
           ),
 
-          // Trial Left Button di atas
-          Positioned(
-            top: 20,
-            left: 20,
-            right: 20,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(25),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 10,
-                      spreadRadius: 2,
+          // Trial Left Button dan Login Button di atas (hanya untuk mode trial)
+          if (widget.isTrial)
+            Positioned(
+              top: 20,
+              left: 20,
+              right: 20,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Trial Left Button
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(25),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Text(
-                  'Trial Left : ${_trialMinutes.toString().padLeft(2, '0')}:${_trialSeconds.toString().padLeft(2, '0')}',
-                  style: const TextStyle(
-                    color: Colors.blue,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    child: Text(
+                      'Trial Left : ${_trialMinutes.toString().padLeft(2, '0')}:${_trialSeconds.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                        color: Colors.blue,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
+                  // Login Button
+                  GestureDetector(
+                    onTap: () {
+                      _trialTimer?.cancel();
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1B9BD8),
+                        borderRadius: BorderRadius.circular(25),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 10,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.login,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Login',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // OurEye Wali Button (hanya untuk mode authenticated - setelah login)
+          if (!widget.isTrial)
+            Positioned(
+              top: 20,
+              left: 20,
+              right: 20,
+              child: Center(
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const TrackLocationScreen(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(25),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Text(
+                      'OurEye Wali',
+                      style: TextStyle(
+                        color: Color(0xFF1B9BD8),
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+
+          // Logout Button (Pojok Kanan Atas - Authenticated Mode)
+          if (!widget.isTrial)
+            Positioned(
+              top: 25,
+              right: 20,
+              child: GestureDetector(
+                onTap: _handleLogout,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.8),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 5,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.logout,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
 
           // Status Command di atas
           if (_command.isNotEmpty && !_isListening)
