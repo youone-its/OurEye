@@ -6,9 +6,11 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'api_settings_screen.dart';
 import 'location_settings_screen.dart';
+import 'login_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -38,11 +40,13 @@ class _CameraScreenState extends State<CameraScreen> {
   // Trial time
   int _trialMinutes = 1;
   int _trialSeconds = 0;
+  Timer? _trialTimer;
 
   @override
   void initState() {
     super.initState();
     _initializeApp();
+    _startTrialTimer();
   }
 
   Future<void> _initializeApp() async {
@@ -101,6 +105,36 @@ class _CameraScreenState extends State<CameraScreen> {
   Future<void> _loadGeminiModel() async {
     final prefs = await SharedPreferences.getInstance();
     _apiKey = prefs.getString('gemini_api_key') ?? '';
+  }
+
+  void _startTrialTimer() {
+    _trialTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_trialSeconds > 0) {
+        setState(() {
+          _trialSeconds--;
+        });
+      } else if (_trialMinutes > 0) {
+        setState(() {
+          _trialMinutes--;
+          _trialSeconds = 59;
+        });
+      } else {
+        // Trial expired
+        timer.cancel();
+        _handleTrialExpired();
+      }
+    });
+  }
+
+  void _handleTrialExpired() {
+    _trialTimer?.cancel();
+    _cameraController?.dispose();
+    _speech?.stop();
+    _tts?.stop();
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
   }
 
   Future<void> _toggleListening() async {
@@ -227,6 +261,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   void dispose() {
+    _trialTimer?.cancel();
     _cameraController?.dispose();
     _speech?.stop();
     _tts?.stop();
