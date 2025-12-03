@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:audioplayers/audioplayers.dart';
-import 'dart:typed_data';
 import 'api_settings_screen.dart';
 import 'location_settings_screen.dart';
 
@@ -22,20 +21,20 @@ class _CameraScreenState extends State<CameraScreen> {
   CameraController? _cameraController;
   List<CameraDescription>? _cameras;
   bool _isCameraInitialized = false;
-  
+
   // Speech & TTS
-  late stt.SpeechToText _speech;
-  late FlutterTts _tts;
+  stt.SpeechToText? _speech;
+  FlutterTts? _tts;
   bool _isListening = false;
   String _command = '';
-  
+
   // AI
   String? _apiKey;
   bool _isProcessing = false;
-  
+
   // Audio
   final AudioPlayer _audioPlayer = AudioPlayer();
-  
+
   @override
   void initState() {
     super.initState();
@@ -68,8 +67,14 @@ class _CameraScreenState extends State<CameraScreen> {
           enableAudio: false,
         );
         await _cameraController!.initialize();
+
         if (mounted) {
           setState(() => _isCameraInitialized = true);
+
+          // PETUNJUK SUARA SAAT KAMERA SIAP
+          await _tts?.speak(
+            "Aplikasi siap. Layar sebelah kiri adalah tombol Command untuk perintah suara. Layar sebelah kanan adalah tombol SOS untuk bantuan darurat.",
+          );
         }
       }
     } catch (e) {
@@ -79,129 +84,86 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> _initializeSpeech() async {
     _speech = stt.SpeechToText();
-    bool available = await _speech.initialize(
-      onError: (error) => debugPrint('STT Init Error: ${error.errorMsg}'),
-      onStatus: (status) => debugPrint('STT Init Status: $status'),
-    );
-    
-    if (!available) {
-      debugPrint('Speech recognition tidak tersedia di device ini');
-    } else {
-      debugPrint('Speech recognition siap!');
-    }
+    await _speech?.initialize();
   }
 
   Future<void> _initializeTTS() async {
     _tts = FlutterTts();
-    await _tts.setLanguage('id-ID');
-    await _tts.setPitch(1.0);
-    await _tts.setSpeechRate(0.5);
+    await _tts?.setLanguage('id-ID');
+    await _tts?.setSpeechRate(0.9);
+    await _tts?.setVolume(1.0);
   }
 
   Future<void> _loadGeminiModel() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _apiKey = prefs.getString('gemini_api_key') ?? '';
-      
-      if (_apiKey != null && _apiKey!.isNotEmpty) {
-        debugPrint('Gemini API key loaded');
-      }
-    } catch (e) {
-      debugPrint('Error loading Gemini API key: $e');
-    }
+    final prefs = await SharedPreferences.getInstance();
+    _apiKey = prefs.getString('gemini_api_key') ?? '';
   }
 
-  Future<void> _startListening() async {
-    if (!_isListening) {
-      bool available = await _speech.initialize(
-        onError: (error) {
-          debugPrint('STT Error: ${error.errorMsg}');
-          setState(() => _isListening = false);
-        },
-        onStatus: (status) {
-          debugPrint('STT Status: $status');
-          if (status == 'notListening') {
-            setState(() => _isListening = false);
-          }
-        },
-      );
-      
-      if (available) {
-        setState(() {
-          _isListening = true;
-          _command = ''; // Reset command
-        });
-        
-        await _speech.listen(
-          onResult: (result) {
-            debugPrint('STT Result: ${result.recognizedWords}');
-            if (result.recognizedWords.isNotEmpty) {
-              setState(() {
-                _command = result.recognizedWords;
-              });
-            }
-          },
-          localeId: 'id_ID',
-          listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 5),
-          partialResults: true,
-          onSoundLevelChange: (level) {
-            // Optional: show sound level indicator
-          },
-        );
-      } else {
-        _showSnackBar('Speech recognition tidak tersedia');
-      }
+  Future<void> _toggleListening() async {
+    if (_speech == null || _tts == null) {
+      debugPrint('Speech or TTS not initialized');
+      return;
     }
-  }
 
-  Future<void> _stopListening() async {
     if (_isListening) {
-      await _speech.stop();
+      await _speech!.stop();
       setState(() => _isListening = false);
-      
-      // Show command if captured
       if (_command.isNotEmpty) {
-        _showSnackBar('Command tersimpan: $_command');
+        await _tts!.speak("Perintah tersimpan: $_command");
       } else {
-        _showSnackBar('Tidak ada suara terdeteksi');
+        await _tts!.speak("Tidak ada suara yang terdeteksi.");
       }
+    } else {
+      setState(() {
+        _isListening = true;
+        _command = '';
+      });
+      await _tts!.speak("Sedang mendengarkan. Silakan bicara sekarang.");
+      _speech!.listen(
+        onResult: (result) {
+          setState(() {
+            _command = result.recognizedWords;
+          });
+        },
+        localeId: 'id_ID',
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 6),
+        partialResults: true,
+      );
     }
   }
 
   Future<void> _captureAndSend() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      _showSnackBar('Kamera belum siap');
-      return;
-    }
-
-    if (_apiKey == null || _apiKey!.isEmpty) {
-      _showSnackBar('API Key Gemini belum diatur');
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ApiSettingsScreen()),
-      );
+    if (_tts == null) {
+      debugPrint('TTS not initialized');
       return;
     }
 
     if (_command.isEmpty) {
-      _showSnackBar('Rekam command terlebih dahulu');
+      await _tts!.speak("Silakan rekam perintah terlebih dahulu.");
+      return;
+    }
+    if (_apiKey == null || _apiKey!.isEmpty) {
+      await _tts!.speak("API Key belum diatur.");
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const ApiSettingsScreen()));
       return;
     }
 
+    setState(() => _isProcessing = true);
+    await _tts!.speak("Sedang mengirim ke AI, tunggu sebentar.");
+
     try {
-      setState(() => _isProcessing = true);
-      
-      // Capture image
+      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
+      await _audioPlayer.play(AssetSource('sounds/loading.mp3'));
+
       final image = await _cameraController!.takePicture();
       final bytes = await image.readAsBytes();
       final base64Image = base64Encode(bytes);
-      
-      // Send to Gemini REST API - using Flash Lite (most generous free tier)
+
       final url = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$_apiKey'
-      );
-      
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$_apiKey');
+
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -221,52 +183,39 @@ class _CameraScreenState extends State<CameraScreen> {
           ]
         }),
       );
-      
+
+      await _audioPlayer.stop();
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final responseText = data['candidates'][0]['content']['parts'][0]['text'] ?? 'Tidak ada response';
-        
-        // Stop loading sound
-        await _audioPlayer.stop();
-        
-        // Speak response
-        await _tts.speak(responseText);
-        
-        // Show response
+        final responseText = data['candidates'][0]['content']['parts'][0]
+                ['text'] ??
+            'Tidak ada jawaban dari AI.';
+
+        await _tts!.speak(responseText);
+
         if (mounted) {
           _showResponseDialog(responseText);
         }
       } else {
-        throw Exception('API Error: ${response.statusCode} - ${response.body}');
+        await _tts!.speak("Gagal terhubung ke server AI.");
       }
-      
     } catch (e) {
-      debugPrint('Error: $e');
-      _showSnackBar('Error: ${e.toString()}');
+      await _tts!.speak("Terjadi kesalahan saat mengirim data.");
     } finally {
       setState(() => _isProcessing = false);
     }
   }
 
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
   void _showResponseDialog(String response) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Response AI'),
-        content: SingleChildScrollView(
-          child: Text(response),
-        ),
+      builder: (_) => AlertDialog(
+        title: const Text("Jawaban AI"),
+        content: SingleChildScrollView(child: Text(response)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
+              onPressed: () => Navigator.pop(context), child: const Text("OK")),
         ],
       ),
     );
@@ -275,250 +224,301 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   void dispose() {
     _cameraController?.dispose();
-    _speech.stop();
-    _tts.stop();
+    _speech?.stop();
+    _tts?.stop();
     _audioPlayer.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final sectionHeight = size.height / 5;
-
     return Scaffold(
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Camera Preview (Full Screen)
-          if (_isCameraInitialized)
-            SizedBox(
-              width: size.width,
-              height: size.height,
-              child: CameraPreview(_cameraController!),
-            )
-          else
-            const Center(child: CircularProgressIndicator()),
-          
-          // Overlay Sections
-          Column(
+          // 2 Tombol Penuh Layar (KIRI & KANAN)
+          Row(
             children: [
-              // Top Row (2/5 height)
-              SizedBox(
-                height: sectionHeight * 2,
-                child: Row(
-                  children: [
-                    // API Settings Button
-                    _buildButton(
-                      flex: 1,
-                      icon: Icons.settings,
-                      label: 'API',
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ApiSettingsScreen(),
+              // ========== TOMBOL KIRI: COMMAND ==========
+              Expanded(
+                child: GestureDetector(
+                  onTap: _isProcessing ? null : _toggleListening,
+                  child: Container(
+                    color: Colors.transparent,
+                    child: Stack(
+                      children: [
+                        // Camera preview untuk sisi kiri
+                        if (_isCameraInitialized)
+                          Positioned.fill(
+                            child: CameraPreview(_cameraController!),
                           ),
-                        );
-                        _loadGeminiModel();
-                      },
-                    ),
-                    // Location Settings Button
-                    _buildButton(
-                      flex: 1,
-                      icon: Icons.location_on,
-                      label: 'Lokasi',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const LocationSettingsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Middle Row (1/5 height) - Capture Button
-              SizedBox(
-                height: sectionHeight,
-                child: Center(
-                  child: _isProcessing
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : GestureDetector(
-                          onTap: _captureAndSend,
+
+                        // Overlay gradient biru untuk Command
+                        Positioned.fill(
                           child: Container(
-                            width: 80,
-                            height: 80,
                             decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.3),
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 4,
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: _isListening
+                                    ? [
+                                        Colors.red.withOpacity(0.7),
+                                        Colors.red.withOpacity(0.5),
+                                      ]
+                                    : [
+                                        Colors.blue.withOpacity(0.6),
+                                        Colors.blue.withOpacity(0.3),
+                                      ],
                               ),
                             ),
-                            child: const Icon(
-                              Icons.camera,
-                              color: Colors.white,
-                              size: 40,
+                          ),
+                        ),
+
+                        // Icon & Text Command
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _isListening ? Icons.stop_circle : Icons.mic,
+                                color: Colors.white,
+                                size: 100,
+                              ),
+                              const SizedBox(height: 20),
+                              Text(
+                                _isListening ? "STOP" : "COMMAND",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 2,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black,
+                                      blurRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Garis pemisah tengah
+              Container(
+                width: 3,
+                color: Colors.white.withOpacity(0.5),
+              ),
+
+              // ========== TOMBOL KANAN: SOS ==========
+              Expanded(
+                child: GestureDetector(
+                  onTap: _isProcessing
+                      ? null
+                      : () async {
+                          await _tts?.speak("Fitur SOS segera hadir.");
+                        },
+                  child: Container(
+                    color: Colors.transparent,
+                    child: Stack(
+                      children: [
+                        // Camera preview untuk sisi kanan
+                        if (_isCameraInitialized)
+                          Positioned.fill(
+                            child: CameraPreview(_cameraController!),
+                          ),
+
+                        // Overlay gradient merah untuk SOS
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topRight,
+                                end: Alignment.bottomLeft,
+                                colors: [
+                                  Colors.red.shade800.withOpacity(0.6),
+                                  Colors.red.shade600.withOpacity(0.4),
+                                ],
+                              ),
                             ),
                           ),
                         ),
+
+                        // Icon & Text SOS
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.white,
+                                size: 100,
+                              ),
+                              const SizedBox(height: 20),
+                              const Text(
+                                "SOS",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 2,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black,
+                                      blurRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              
-              // Bottom Row (2/5 height)
-              SizedBox(
-                height: sectionHeight * 2,
+            ],
+          ),
+
+          // Status Command di atas
+          if (_command.isNotEmpty && !_isListening)
+            Positioned(
+              top: 50,
+              left: 20,
+              right: 20,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.green, width: 2),
+                ),
                 child: Row(
                   children: [
-                    // Voice Command Button
-                    _buildButton(
-                      flex: 1,
-                      icon: _isListening ? Icons.mic : Icons.mic_none,
-                      label: _isListening ? 'Stop' : 'Command',
-                      color: _isListening ? Colors.red : Colors.blue,
-                      onTap: () {
-                        if (_isListening) {
-                          _stopListening();
-                        } else {
-                          _startListening();
-                        }
-                      },
-                    ),
-                    // SOS Button
-                    _buildButton(
-                      flex: 1,
-                      icon: Icons.warning,
-                      label: 'SOS',
-                      color: Colors.red,
-                      onTap: () {
-                        _showSnackBar('SOS Feature - Coming Soon');
-                      },
+                    const Icon(Icons.check_circle,
+                        color: Colors.green, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _command,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-          
-          // Command Display & Status
-          Positioned(
-            top: 50,
-            left: 20,
-            right: 20,
-            child: Column(
-              children: [
-                // Listening Indicator
-                if (_isListening)
-                  Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.8),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'Mendengarkan...',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                
-                // Command Display
-                if (_command.isNotEmpty && !_isListening)
-                  Container(
-                    margin: const EdgeInsets.only(top: 10),
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.8),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.green, width: 2),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Command:',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          _command,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildButton({
-    required int flex,
-    required IconData icon,
-    required String label,
-    Color? color,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      flex: flex,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: (color ?? Colors.blue).withOpacity(0.3),
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(
-              color: color ?? Colors.white,
-              width: 2,
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: Colors.white, size: 40),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+          // Listening Indicator
+          if (_isListening)
+            Positioned(
+              top: 50,
+              left: 20,
+              right: 20,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      "Mendengarkan...",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+
+          // Tombol Capture di tengah
+          if (_command.isNotEmpty && !_isListening && !_isProcessing)
+            Center(
+              child: GestureDetector(
+                onTap: _captureAndSend,
+                child: Container(
+                  width: 90,
+                  height: 90,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.5),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    color: Colors.black,
+                    size: 45,
+                  ),
+                ),
+              ),
+            ),
+
+          // Loading Overlay
+          if (_isProcessing)
+            Container(
+              color: Colors.black.withOpacity(0.8),
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 5,
+                    ),
+                    SizedBox(height: 20),
+                    Text(
+                      "Memproses...",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Loading Camera
+          if (!_isCameraInitialized)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
+        ],
       ),
     );
   }

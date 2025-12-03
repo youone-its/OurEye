@@ -36,7 +36,7 @@ class _ApiSettingsScreenState extends State<ApiSettingsScreen> {
       final appState = context.read<AppStateProvider>();
       await appState.saveGeminiApiKey(_apiKeyController.text.trim());
       await appState.saveSttLanguage(_selectedLanguage);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Pengaturan berhasil disimpan')),
@@ -103,7 +103,7 @@ class _ApiSettingsScreenState extends State<ApiSettingsScreen> {
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _selectedLanguage,
+                initialValue: _selectedLanguage,
                 decoration: const InputDecoration(
                   labelText: 'Bahasa untuk Voice Command',
                   border: OutlineInputBorder(),

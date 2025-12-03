@@ -30,6 +30,8 @@ dependencies:
   
   # Text to Speech
   flutter_tts: ^3.8.5
+
+  flutter_svg: ^2.0.9
   
   # Audio player for sound effects
   audioplayers: ^5.2.1
@@ -52,3 +54,4 @@ flutter:
   
   assets:
     - assets/sounds/
+    - assets/images/
