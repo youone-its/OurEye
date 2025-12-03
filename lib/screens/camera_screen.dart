@@ -8,6 +8,10 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:vibration/vibration.dart';
+import '../services/socket_service.dart';
+import '../services/database_service.dart';
 import 'api_settings_screen.dart';
 import 'location_settings_screen.dart';
 import 'login_screen.dart';
@@ -46,12 +50,20 @@ class _CameraScreenState extends State<CameraScreen> {
   int _trialSeconds = 0;
   Timer? _trialTimer;
 
+  // Location tracking
+  final SocketService _socketService = SocketService();
+  Timer? _locationTimer;
+  Position? _lastPosition;
+
   @override
   void initState() {
     super.initState();
     _initializeApp();
     if (widget.isTrial) {
       _startTrialTimer();
+    } else {
+      // Start real-time location tracking for authenticated users
+      _startLocationTracking();
     }
   }
 
@@ -61,6 +73,52 @@ class _CameraScreenState extends State<CameraScreen> {
     await _initializeSpeech();
     await _initializeTTS();
     await _loadGeminiModel();
+  }
+
+  Future<void> _startLocationTracking() async {
+    if (widget.isTrial) return; // Don't track trial users
+
+    try {
+      // Get user data from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt('user_id');
+      final userTopic = prefs.getString('user_topic');
+
+      if (userId == null || userTopic == null) {
+        debugPrint('⚠️ User not logged in, skipping location tracking');
+        return;
+      }
+
+      // Connect to Socket.io
+      await _socketService.connect();
+
+      // Start periodic location updates (every 5 seconds)
+      _locationTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+        try {
+          final position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+          );
+
+          _lastPosition = position;
+
+          // Publish location to topic via Socket.io
+          _socketService.publishLocation(
+            userId: userId.toString(),
+            latitude: position.latitude,
+            longitude: position.longitude,
+            heading: position.heading,
+          );
+
+          debugPrint('📍 Location published: ${position.latitude}, ${position.longitude}');
+        } catch (e) {
+          debugPrint('⚠️ Error getting location: $e');
+        }
+      });
+
+      debugPrint('✅ Location tracking started for user $userId');
+    } catch (e) {
+      debugPrint('❌ Error starting location tracking: $e');
+    }
   }
 
   Future<void> _requestPermissions() async {
@@ -204,6 +262,73 @@ class _CameraScreenState extends State<CameraScreen> {
     }
 
     try {
+      // ========== IMMEDIATE FEEDBACK: HAPTIC + TTS ==========
+      // 1. Haptic feedback (getaran)
+      bool? hasVibrator = await Vibration.hasVibrator();
+      if (hasVibrator == true) {
+        Vibration.vibrate(duration: 200, amplitude: 255);
+        await Future.delayed(const Duration(milliseconds: 300));
+        Vibration.vibrate(duration: 200, amplitude: 255);
+        await Future.delayed(const Duration(milliseconds: 300));
+        Vibration.vibrate(duration: 200, amplitude: 255);
+      }
+
+      // 2. TTS immediate confirmation (SEBELUM socket emit)
+      await _tts!.speak("SOS Dikirim!");
+
+      // ========== GET LOCATION & USER DATA ==========
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+      } catch (e) {
+        debugPrint('⚠️ Could not get location: $e');
+      }
+
+      // Get user data from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt('user_id');
+      final userTopic = prefs.getString('user_topic');
+
+      if (userId == null || userTopic == null) {
+        debugPrint('❌ User not logged in or topic missing');
+        await _tts!.speak("Error: User tidak terdeteksi");
+        return;
+      }
+
+      // Get all guardians for this user
+      final guardians = await DatabaseService().getUserGuardians(userId);
+      final guardianIds = guardians.map((g) => g['id'] as int).toList();
+
+      // ========== EMIT SOS VIA SOCKET.IO ==========
+      final socketService = SocketService();
+      await socketService.connect();
+
+      socketService.publishSOS(
+        userId: userId.toString(),
+        topic: userTopic,
+        guardianIds: guardianIds,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+        address: position != null
+            ? '${position.latitude}, ${position.longitude}'
+            : 'Unknown location',
+      );
+
+      // Save to database
+      if (position != null) {
+        await DatabaseService().createSOSAlert(
+          userId: userId,
+          guardianId: guardianIds.isNotEmpty ? guardianIds.first : null,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          address: '${position.latitude}, ${position.longitude}',
+          topic: userTopic,
+        );
+      }
+
+      // ========== VISUAL & AUDIO FEEDBACK ==========
       // Play SOS alarm sound
       await _audioPlayer.setReleaseMode(ReleaseMode.loop);
       await _audioPlayer.play(AssetSource('sounds/alarm.wav'));
@@ -399,6 +524,7 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   void dispose() {
     _trialTimer?.cancel();
+    _locationTimer?.cancel();
     _cameraController?.dispose();
     _speech?.stop();
     _tts?.stop();
@@ -631,49 +757,6 @@ class _CameraScreenState extends State<CameraScreen> {
                     ),
                   ),
                 ],
-              ),
-            ),
-
-          // OurEye Wali Button (hanya untuk mode authenticated - setelah login)
-          if (!widget.isTrial)
-            Positioned(
-              top: 20,
-              left: 20,
-              right: 20,
-              child: Center(
-                child: GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const TrackLocationScreen(),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 32, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(25),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
-                          blurRadius: 10,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: const Text(
-                      'OurEye Wali',
-                      style: TextStyle(
-                        color: Color(0xFF1B9BD8),
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
               ),
             ),
 

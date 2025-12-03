@@ -44,11 +44,21 @@ dependencies:
   geocoding: ^2.1.1
   google_generative_ai: ^0.4.7
   
+  # Google Maps
+  google_maps_flutter: ^2.5.0
+  
+  # Socket.io for real-time tracking
+  socket_io_client: ^2.0.3+1
+  
+  # Haptic feedback
+  vibration: ^2.0.0
+  
   # Database
   postgres: ^2.6.2
   
   # Security
   crypto: ^3.0.3
+  flutter_dotenv: ^6.0.0
 
 dev_dependencies:
   flutter_test:

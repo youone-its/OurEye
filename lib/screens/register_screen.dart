@@ -19,6 +19,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
+  String _selectedRole = 'user'; // Default role
 
   @override
   void dispose() {
@@ -82,6 +83,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         email: email,
         username: username,
         password: password,
+        role: _selectedRole, // Pass selected role
       );
 
       if (user != null) {
@@ -91,6 +93,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         await prefs.setInt('user_id', user['id']);
         await prefs.setString('user_email', user['email']);
         await prefs.setString('username', user['username']);
+        await prefs.setString('user_role', user['role']); // Save role
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -310,24 +313,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 20),
 
-                  // Forgot Password
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: _handleForgotPassword,
-                      child: const Text(
-                        'Forgot password?',
-                        style: TextStyle(
-                          color: Color(0xFFFFA500),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+                  // Role Selection
+                  const Text(
+                    'Daftar Sebagai',
+                    style: TextStyle(
+                      color: Color(0xFF1B9BD8),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        RadioListTile<String>(
+                          title: const Text('👤 User (Tunanetra)'),
+                          subtitle: const Text('Untuk pengguna tunanetra'),
+                          value: 'user',
+                          groupValue: _selectedRole,
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedRole = value!;
+                            });
+                          },
+                        ),
+                        const Divider(height: 1),
+                        RadioListTile<String>(
+                          title: const Text('👨‍👩‍👧 Wali'),
+                          subtitle: const Text('Untuk pendamping/wali'),
+                          value: 'wali',
+                          groupValue: _selectedRole,
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedRole = value!;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 30),
 
                   // Register Button
                   ElevatedButton(

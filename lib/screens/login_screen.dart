@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'register_screen.dart';
 import 'splash_screen.dart';
+import 'wali_dashboard_screen.dart';
 import '../services/database_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -54,23 +55,44 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (user != null) {
+        // Generate topic for user role (if not exists)
+        String? userTopic = user['topic'];
+        if (user['role'] == 'user' && (userTopic == null || userTopic.isEmpty)) {
+          userTopic = await _dbService.generateUserTopic(user['id']);
+        }
+
         // Save login session
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_logged_in', true);
         await prefs.setInt('user_id', user['id']);
         await prefs.setString('user_email', user['email']);
         await prefs.setString('username', user['username']);
+        await prefs.setString('user_role', user['role']); // Save role
+        if (userTopic != null) {
+          await prefs.setString('user_topic', userTopic); // Save topic for Socket.io
+        }
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Welcome back, ${user['username']}!')),
           );
 
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-                builder: (_) => const AuthenticatedSplashScreen()),
-          );
+          // Navigate based on role
+          if (user['role'] == 'wali') {
+            // Wali goes to WaliDashboardScreen
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const WaliDashboardScreen()),
+            );
+          } else {
+            // User (tunanetra) goes to AuthenticatedSplashScreen
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const AuthenticatedSplashScreen()),
+            );
+          }
         }
       } else {
         if (mounted) {

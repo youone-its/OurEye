@@ -57,8 +57,21 @@ class DatabaseService {
           email VARCHAR(255) UNIQUE NOT NULL,
           username VARCHAR(255) NOT NULL,
           password_hash VARCHAR(255) NOT NULL,
+          role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'wali')),
+          topic VARCHAR(100) UNIQUE,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      ''');
+
+      // Create guardian_users relational table (one wali can have multiple users)
+      await _connection!.execute('''
+        CREATE TABLE IF NOT EXISTS guardian_users (
+          id SERIAL PRIMARY KEY,
+          guardian_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(guardian_id, user_id)
         )
       ''');
 
@@ -67,9 +80,11 @@ class DatabaseService {
         CREATE TABLE IF NOT EXISTS sos_alerts (
           id SERIAL PRIMARY KEY,
           user_id INTEGER REFERENCES users(id),
+          guardian_id INTEGER REFERENCES users(id),
           latitude DOUBLE PRECISION,
           longitude DOUBLE PRECISION,
           address TEXT,
+          topic VARCHAR(100),
           status VARCHAR(50) DEFAULT 'active',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           resolved_at TIMESTAMP
@@ -117,17 +132,19 @@ class DatabaseService {
     required String email,
     required String username,
     required String password,
+    String role = 'user', // Default role is 'user'
   }) async {
     try {
       final conn = await connection;
       final passwordHash = _hashPassword(password);
 
       final result = await conn.query(
-        'INSERT INTO users (email, username, password_hash) VALUES (@email, @username, @passwordHash) RETURNING id, email, username, created_at',
+        'INSERT INTO users (email, username, password_hash, role) VALUES (@email, @username, @passwordHash, @role) RETURNING id, email, username, role, created_at',
         substitutionValues: {
           'email': email,
           'username': username,
           'passwordHash': passwordHash,
+          'role': role,
         },
       );
 
@@ -137,7 +154,8 @@ class DatabaseService {
           'id': row[0],
           'email': row[1],
           'username': row[2],
-          'created_at': row[3],
+          'role': row[3],
+          'created_at': row[4],
         };
       }
       return null;
@@ -157,7 +175,7 @@ class DatabaseService {
       final passwordHash = _hashPassword(password);
 
       final result = await conn.query(
-        'SELECT id, email, username, created_at FROM users WHERE email = @email AND password_hash = @passwordHash',
+        'SELECT id, email, username, role, created_at FROM users WHERE email = @email AND password_hash = @passwordHash',
         substitutionValues: {
           'email': email,
           'passwordHash': passwordHash,
@@ -170,7 +188,8 @@ class DatabaseService {
           'id': row[0],
           'email': row[1],
           'username': row[2],
-          'created_at': row[3],
+          'role': row[3],
+          'created_at': row[4],
         };
       }
       return null;
@@ -180,23 +199,178 @@ class DatabaseService {
     }
   }
 
-  // Create SOS alert
+  // ========== GUARDIAN-USER RELATIONSHIP METHODS ==========
+
+  /// Menambahkan relasi guardian-user (wali mengadopsi user tunanetra)
+  Future<bool> addGuardianUserRelation({
+    required int guardianId,
+    required int userId,
+  }) async {
+    try {
+      final conn = await connection;
+
+      // Verify guardian is actually a wali
+      final guardianCheck = await conn.query(
+        'SELECT role FROM users WHERE id = @guardianId',
+        substitutionValues: {'guardianId': guardianId},
+      );
+
+      if (guardianCheck.isEmpty || guardianCheck.first[0] != 'wali') {
+        print('❌ User $guardianId is not a guardian');
+        return false;
+      }
+
+      // Add relation (UNIQUE constraint prevents duplicates)
+      await conn.execute(
+        'INSERT INTO guardian_users (guardian_id, user_id) VALUES (@guardianId, @userId) ON CONFLICT (guardian_id, user_id) DO NOTHING',
+        substitutionValues: {
+          'guardianId': guardianId,
+          'userId': userId,
+        },
+      );
+
+      print('✅ Guardian $guardianId now monitors user $userId');
+      return true;
+    } catch (e) {
+      print('❌ Error adding guardian-user relation: $e');
+      return false;
+    }
+  }
+
+  /// Mendapatkan semua user yang dimonitor oleh guardian
+  Future<List<Map<String, dynamic>>> getGuardianUsers(int guardianId) async {
+    try {
+      final conn = await connection;
+
+      final result = await conn.query(
+        '''
+        SELECT u.id, u.email, u.username, u.topic, gu.created_at 
+        FROM guardian_users gu
+        JOIN users u ON gu.user_id = u.id
+        WHERE gu.guardian_id = @guardianId
+        ORDER BY gu.created_at DESC
+        ''',
+        substitutionValues: {'guardianId': guardianId},
+      );
+
+      return result.map((row) {
+        return {
+          'id': row[0],
+          'email': row[1],
+          'username': row[2],
+          'topic': row[3],
+          'added_at': row[4],
+        };
+      }).toList();
+    } catch (e) {
+      print('❌ Error getting guardian users: $e');
+      return [];
+    }
+  }
+
+  /// Mendapatkan semua guardian yang memonitor user tertentu
+  Future<List<Map<String, dynamic>>> getUserGuardians(int userId) async {
+    try {
+      final conn = await connection;
+
+      final result = await conn.query(
+        '''
+        SELECT u.id, u.email, u.username, u.topic, gu.created_at 
+        FROM guardian_users gu
+        JOIN users u ON gu.guardian_id = u.id
+        WHERE gu.user_id = @userId
+        ORDER BY gu.created_at DESC
+        ''',
+        substitutionValues: {'userId': userId},
+      );
+
+      return result.map((row) {
+        return {
+          'id': row[0],
+          'email': row[1],
+          'username': row[2],
+          'topic': row[3],
+          'added_at': row[4],
+        };
+      }).toList();
+    } catch (e) {
+      print('❌ Error getting user guardians: $e');
+      return [];
+    }
+  }
+
+  /// Menghapus relasi guardian-user
+  Future<bool> removeGuardianUserRelation({
+    required int guardianId,
+    required int userId,
+  }) async {
+    try {
+      final conn = await connection;
+
+      await conn.execute(
+        'DELETE FROM guardian_users WHERE guardian_id = @guardianId AND user_id = @userId',
+        substitutionValues: {
+          'guardianId': guardianId,
+          'userId': userId,
+        },
+      );
+
+      print('✅ Guardian $guardianId no longer monitors user $userId');
+      return true;
+    } catch (e) {
+      print('❌ Error removing guardian-user relation: $e');
+      return false;
+    }
+  }
+
+  /// Generate unique topic for user (based on user ID)
+  Future<String?> generateUserTopic(int userId) async {
+    try {
+      final conn = await connection;
+
+      // Create topic format: user_<id>_<timestamp>
+      final topic = 'user_${userId}_${DateTime.now().millisecondsSinceEpoch}';
+
+      // Update user's topic field
+      await conn.execute(
+        'UPDATE users SET topic = @topic WHERE id = @userId',
+        substitutionValues: {
+          'topic': topic,
+          'userId': userId,
+        },
+      );
+
+      print('✅ Generated topic for user $userId: $topic');
+      return topic;
+    } catch (e) {
+      print('❌ Error generating user topic: $e');
+      return null;
+    }
+  }
+
+  // ========== END GUARDIAN-USER METHODS ==========
+
+  // Create SOS alert with guardian and topic
   Future<int?> createSOSAlert({
     required int userId,
+    int? guardianId,
     required double latitude,
     required double longitude,
     String? address,
+    String? topic,
   }) async {
     try {
       final conn = await connection;
 
       final result = await conn.query(
-        'INSERT INTO sos_alerts (user_id, latitude, longitude, address) VALUES (@userId, @latitude, @longitude, @address) RETURNING id',
+        'INSERT INTO sos_alerts (user_id, guardian_id, latitude, longitude, address, topic) VALUES (@userId, @guardianId, @latitude, @longitude, @address, @topic) RETURNING id',
         substitutionValues: {
           'userId': userId,
+          'guardianId': guardianId,
           'latitude': latitude,
           'longitude': longitude,
           'address': address ?? 'Unknown location',
+          'topic': topic,
         },
       );
 
