@@ -206,8 +206,7 @@ class _CameraScreenState extends State<CameraScreen> {
     try {
       // Play SOS alarm sound
       await _audioPlayer.setReleaseMode(ReleaseMode.loop);
-      await _audioPlayer.play(
-          AssetSource('sounds/loading.mp3')); // Using loading sound as alarm
+      await _audioPlayer.play(AssetSource('sounds/alarm.wav'));
 
       // TTS announcement for blind user
       await _tts!.speak("S O S diaktifkan! Mengirim sinyal darurat.");
