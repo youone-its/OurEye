@@ -13,8 +13,14 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+    with TickerProviderStateMixin {
+  late AnimationController _rotationController;
+  late AnimationController _pulseController;
+  late AnimationController _fadeController;
+
+  late Animation<double> _pulseAnimation;
+  late Animation<double> _fadeAnimation;
+
   final AudioPlayer _audioPlayer = AudioPlayer();
   final FlutterTts _tts = FlutterTts();
 
@@ -24,11 +30,31 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // Rotating animation
-    _controller = AnimationController(
+    // Rotating animation for loading ring
+    _rotationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
-    )..repeat();
+    );
+
+    // Pulse animation for logo
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    // Fade animation for text
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    _fadeAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
 
     // Speak first instruction
     _announceInstruction();
@@ -38,7 +64,7 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _announceInstruction() async {
     try {
       await _tts.setLanguage('id-ID');
-      await _tts.setSpeechRate(1.0);
+      await _tts.setSpeechRate(0.5);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
 
@@ -57,10 +83,13 @@ class _SplashScreenState extends State<SplashScreen>
       _isLoading = true;
     });
 
+    // Start rotation animation
+    _rotationController.repeat();
+
     try {
       // TTS: "Menyiapkan aplikasi"
       await _tts.setLanguage('id-ID');
-      await _tts.setSpeechRate(1.0);
+      await _tts.setSpeechRate(0.5);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
       await _tts.speak("Menyiapkan aplikasi");
@@ -84,7 +113,7 @@ class _SplashScreenState extends State<SplashScreen>
       await _audioPlayer.stop();
 
       await _tts.setLanguage('id-ID');
-      await _tts.setSpeechRate(1.0);
+      await _tts.setSpeechRate(0.5);
       await _tts.setPitch(1.0);
       await _tts.setVolume(1.0);
       await _tts.speak("Aplikasi siap");
@@ -104,7 +133,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    _controller.dispose();
+    _rotationController.dispose();
+    _pulseController.dispose();
+    _fadeController.dispose();
     _audioPlayer.dispose();
     _tts.stop();
     super.dispose();
@@ -123,59 +154,131 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // SVG Logo + rotating ring
+                // SVG Logo + rotating ring with pulse effect
                 SizedBox(
-                  width: 250,
-                  height: 250,
+                  width: 300,
+                  height: 300,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Logo SVG
-                      SvgPicture.asset(
-                        'assets/images/ourLogo.svg',
-                        width: 150,
-                        height: 150,
-                        colorFilter: const ColorFilter.mode(
-                          Colors.white,
-                          BlendMode.srcIn,
+                      // Outer glow ring (static)
+                      Container(
+                        width: 240,
+                        height: 240,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white.withOpacity(0.1),
+                              blurRadius: 40,
+                              spreadRadius: 10,
+                            ),
+                          ],
                         ),
                       ),
 
-                      // Rotating loading indicator
-                      if (_isLoading)
+                      // Pulsing Logo
+                      AnimatedBuilder(
+                        animation: _pulseAnimation,
+                        builder: (_, child) {
+                          return Transform.scale(
+                            scale: _isLoading ? _pulseAnimation.value : 1.0,
+                            child: child,
+                          );
+                        },
+                        child: SvgPicture.asset(
+                          'assets/images/ourLogo.svg',
+                          width: 140,
+                          height: 140,
+                          colorFilter: const ColorFilter.mode(
+                            Colors.white,
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+
+                      // Rotating double ring loading indicator
+                      if (_isLoading) ...[
+                        // Outer ring
                         AnimatedBuilder(
-                          animation: _controller,
+                          animation: _rotationController,
                           builder: (_, child) {
                             return Transform.rotate(
-                              angle: _controller.value * 2 * math.pi,
+                              angle: _rotationController.value * 2 * math.pi,
                               child: child,
                             );
                           },
-                          child: const SizedBox(
-                            width: 240,
-                            height: 240,
+                          child: SizedBox(
+                            width: 260,
+                            height: 260,
                             child: CircularProgressIndicator(
-                              strokeWidth: 5,
+                              strokeWidth: 4,
                               valueColor: AlwaysStoppedAnimation(
-                                Colors.white,
+                                Colors.white.withOpacity(0.8),
                               ),
                             ),
                           ),
                         ),
+
+                        // Inner ring (counter-rotating)
+                        AnimatedBuilder(
+                          animation: _rotationController,
+                          builder: (_, child) {
+                            return Transform.rotate(
+                              angle: -_rotationController.value * 3 * math.pi,
+                              child: child,
+                            );
+                          },
+                          child: SizedBox(
+                            width: 220,
+                            height: 220,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              valueColor: AlwaysStoppedAnimation(
+                                Colors.white.withOpacity(0.4),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 30),
+                const SizedBox(height: 50),
 
-                const SizedBox(height: 12),
-
-                const Text(
-                  "AI Visual Assistant",
-                  style: TextStyle(
-                    fontSize: 20,
-                    color: Color.fromRGBO(255, 255, 255, 0.7),
-                    fontWeight: FontWeight.w300,
+                // Animated text
+                AnimatedBuilder(
+                  animation: _fadeAnimation,
+                  builder: (_, child) {
+                    return Opacity(
+                      opacity: _fadeAnimation.value,
+                      child: child,
+                    );
+                  },
+                  child: Column(
+                    children: [
+                      const Text(
+                        "AI Visual Assistant",
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Color.fromRGBO(255, 255, 255, 0.8),
+                          fontWeight: FontWeight.w300,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      if (_isLoading) ...[
+                        const SizedBox(height: 30),
+                        const Text(
+                          "Menyiapkan aplikasi...",
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Color.fromRGBO(255, 255, 255, 0.6),
+                            fontWeight: FontWeight.w300,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
