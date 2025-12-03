@@ -175,7 +175,7 @@ class DatabaseService {
       final passwordHash = _hashPassword(password);
 
       final result = await conn.query(
-        'SELECT id, email, username, role, created_at FROM users WHERE email = @email AND password_hash = @passwordHash',
+        'SELECT id, email, username, role, topic, created_at FROM users WHERE email = @email AND password_hash = @passwordHash',
         substitutionValues: {
           'email': email,
           'passwordHash': passwordHash,
@@ -189,7 +189,8 @@ class DatabaseService {
           'email': row[1],
           'username': row[2],
           'role': row[3],
-          'created_at': row[4],
+          'topic': row[4],
+          'created_at': row[5],
         };
       }
       return null;

@@ -1,0 +1,29 @@
+# Ignore node modules
+node_modules/
+
+# Ignore logs
+logs/
+*.log
+npm-debug.log*
+
+# Ignore environment variables
+.env
+.env.local
+.env.production
+
+# PM2 files
+.pm2/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build files
+dist/
+build/

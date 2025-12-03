@@ -7,10 +7,14 @@ import '../services/socket_service.dart';
 
 class GuardianMapScreen extends StatefulWidget {
   final String monitoredUserId;
+  final String userTopic;
+  final String userName;
 
   const GuardianMapScreen({
     super.key,
     required this.monitoredUserId,
+    required this.userTopic,
+    required this.userName,
   });
 
   @override
@@ -49,8 +53,9 @@ class _GuardianMapScreenState extends State<GuardianMapScreen> {
         _isConnected = _socketService.isConnected;
       });
 
-      // Join topic untuk user yang dipantau
-      _socketService.joinTopic(widget.monitoredUserId);
+      // Join topic untuk user yang dipantau (dari database)
+      debugPrint('👂 Joining topic: ${widget.userTopic}');
+      _socketService.joinTopic(widget.userTopic);
 
       // Subscribe to location updates
       _socketService.subscribeLocation((data) {
@@ -176,7 +181,7 @@ class _GuardianMapScreenState extends State<GuardianMapScreen> {
     // Cleanup
     _socketService.unsubscribeLocation();
     _socketService.unsubscribeSOS();
-    _socketService.leaveTopic(widget.monitoredUserId);
+    _socketService.leaveTopic(widget.userTopic);
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -291,10 +296,17 @@ class _GuardianMapScreenState extends State<GuardianMapScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _userStatus,
+                  widget.userName,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  _userStatus,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
                   ),
                 ),
                 if (_lastUpdate != null)

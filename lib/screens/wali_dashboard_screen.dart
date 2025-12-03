@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'initial_splash_screen.dart';
-import 'guardian_map_screen.dart';
+import 'select_user_screen.dart';
 import 'manage_users_screen.dart';
 
 class WaliDashboardScreen extends StatefulWidget {
@@ -122,13 +122,11 @@ class _WaliDashboardScreenState extends State<WaliDashboardScreen> {
                     subtitle: 'Pantau lokasi pengguna real-time',
                     color: Colors.green,
                     onTap: () {
-                      // Navigate to Guardian Map Screen
+                      // Navigate to Select User Screen
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const GuardianMapScreen(
-                            monitoredUserId: 'user_123', // TODO: Get from selected user
-                          ),
+                          builder: (_) => const SelectUserScreen(),
                         ),
                       );
                     },

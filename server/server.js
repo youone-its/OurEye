@@ -59,20 +59,33 @@ io.on('connection', (socket) => {
 
   /**
    * Location Update dari User
-   * Payload: { user_id, lat, lng, heading, timestamp }
+   * Payload: { user_id, lat, lng, heading, timestamp, topic }
    */
   socket.on('location_update', (data) => {
     console.log(`📍 Location update from user ${data.user_id}:`, {
       lat: data.lat,
       lng: data.lng,
-      heading: data.heading
+      heading: data.heading,
+      topic: data.topic
     });
 
     // Store user's socket ID
     activeUsers.set(data.user_id, socket.id);
 
-    // Broadcast ke semua guardian yang subscribe ke user ini
-    const userTopic = `user_${data.user_id}`;
+    // Gunakan topic dari payload (dari database), jangan generate
+    const userTopic = data.topic || `user_${data.user_id}`;
+    
+    // AUTO-JOIN: User otomatis join ke topic sendiri untuk menerima broadcast
+    if (!topicSubscribers.has(userTopic) || !topicSubscribers.get(userTopic).has(socket.id)) {
+      socket.join(userTopic);
+      
+      if (!topicSubscribers.has(userTopic)) {
+        topicSubscribers.set(userTopic, new Set());
+      }
+      topicSubscribers.get(userTopic).add(socket.id);
+      
+      console.log(`🔑 User ${data.user_id} auto-joined topic: ${userTopic}`);
+    }
     
     // Forward to topic subscribers dengan event 'update_ui'
     socket.to(userTopic).emit('update_ui', {
@@ -83,7 +96,7 @@ io.on('connection', (socket) => {
       timestamp: data.timestamp || new Date().toISOString()
     });
 
-    console.log(`✉️ Broadcasted to topic: ${userTopic}`);
+    console.log(`✉️ Broadcasted to topic: ${userTopic} (${topicSubscribers.get(userTopic).size} subscribers)`);
   });
 
   /**

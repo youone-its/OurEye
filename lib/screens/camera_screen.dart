@@ -92,6 +92,10 @@ class _CameraScreenState extends State<CameraScreen> {
       // Connect to Socket.io
       await _socketService.connect();
 
+      // Auto-join user's own topic from database (not generated)
+      _socketService.joinTopic(userTopic);
+      debugPrint('✅ Joined topic: $userTopic');
+
       // Start periodic location updates (every 5 seconds)
       _locationTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
         try {
@@ -104,6 +108,7 @@ class _CameraScreenState extends State<CameraScreen> {
           // Publish location to topic via Socket.io
           _socketService.publishLocation(
             userId: userId.toString(),
+            topic: userTopic,
             latitude: position.latitude,
             longitude: position.longitude,
             heading: position.heading,

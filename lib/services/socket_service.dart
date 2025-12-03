@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
@@ -8,8 +9,9 @@ class SocketService {
 
   IO.Socket? _socket;
   bool _isConnected = false;
+  bool _isConnecting = false;
 
-  // Socket.io server URL - ganti dengan URL server Anda
+  // Socket.io server URL - sama seperti Python client (port 80 default via Nginx)
   static const String _serverUrl = 'http://178.128.122.114';
 
   bool get isConnected => _isConnected;
@@ -21,36 +23,81 @@ class SocketService {
       return;
     }
 
+    if (_isConnecting) {
+      debugPrint('⏳ Connection in progress, waiting...');
+      // Wait for connection to complete
+      await Future.delayed(const Duration(seconds: 2));
+      return;
+    }
+
+    _isConnecting = true;
+
     try {
+      final connectionCompleter = Completer<void>();
+      
       _socket = IO.io(
         _serverUrl,
         IO.OptionBuilder()
-            .setTransports(['websocket'])
-            .disableAutoConnect()
-            .setExtraHeaders({'foo': 'bar'})
+            .setTransports(['websocket', 'polling']) // Add polling fallback
+            .setTimeout(10000) // 10 seconds timeout
+            .setReconnectionAttempts(5)
+            .setReconnectionDelay(2000)
             .build(),
       );
 
-      _socket!.connect();
-
       _socket!.onConnect((_) {
         _isConnected = true;
-        debugPrint('✅ Socket connected successfully');
+        _isConnecting = false;
+        debugPrint('✅ Socket connected successfully to $_serverUrl');
+        if (!connectionCompleter.isCompleted) {
+          connectionCompleter.complete();
+        }
       });
+
+      _socket!.connect();
+
+      // Wait for actual connection event with timeout
+      await connectionCompleter.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          debugPrint('⚠️ Socket connection timeout after 5 seconds');
+        },
+      );
 
       _socket!.onDisconnect((_) {
         _isConnected = false;
+        _isConnecting = false;
         debugPrint('❌ Socket disconnected');
       });
 
       _socket!.onConnectError((error) {
+        _isConnected = false;
+        _isConnecting = false;
         debugPrint('❌ Socket connection error: $error');
       });
 
       _socket!.onError((error) {
         debugPrint('❌ Socket error: $error');
       });
+
+      _socket!.onReconnect((_) {
+        _isConnected = true;
+        debugPrint('🔄 Socket reconnected');
+      });
+
+      // Listen for topic join confirmation
+      _socket!.on('topic_joined', (data) {
+        debugPrint('✅ Topic joined confirmation: $data');
+      });
+
+      // Listen for errors
+      _socket!.on('error', (data) {
+        debugPrint('❌ Socket error event: $data');
+      });
+
     } catch (e) {
+      _isConnected = false;
+      _isConnecting = false;
       debugPrint('❌ Socket connection failed: $e');
     }
   }
@@ -62,6 +109,7 @@ class SocketService {
     required String userId,
     required double latitude,
     required double longitude,
+    String? topic,
     double? heading,
   }) {
     if (_socket == null || !_isConnected) {
@@ -74,6 +122,7 @@ class SocketService {
       'lat': latitude,
       'lng': longitude,
       'heading': heading ?? 0.0,
+      'topic': topic,
       'timestamp': DateTime.now().toIso8601String(),
     };
 
@@ -123,6 +172,13 @@ class SocketService {
 
     _socket!.emit('join_topic', {'topic': topic});
     debugPrint('👂 Joined topic: $topic');
+  }
+
+  /// Auto-join user's own topic after connection (called by user app after login)
+  void joinUserTopic(String userId) {
+    final topic = 'user_$userId';
+    joinTopic(topic);
+    debugPrint('🔑 Auto-joined own topic: $topic');
   }
 
   /// Leave a topic/room
