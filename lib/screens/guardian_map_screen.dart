@@ -28,7 +28,8 @@ class _GuardianMapScreenState extends State<GuardianMapScreen> {
 
   // Map state
   final Set<Marker> _markers = {};
-  LatLng _currentUserLocation = const LatLng(-6.2088, 106.8456); // Default: Jakarta
+  LatLng _currentUserLocation =
+      const LatLng(-6.2088, 106.8456); // Default: Jakarta
   double _currentHeading = 0.0;
   bool _isTracking = false;
   bool _isConnected = false;
@@ -62,9 +63,11 @@ class _GuardianMapScreenState extends State<GuardianMapScreen> {
         _handleLocationUpdate(data);
       });
 
-      // Subscribe to SOS alerts
+      // Subscribe to SOS alerts (PENTING: tambah untuk menerima SOS saat tracking)
       _socketService.subscribeSOS((data) {
-        _handleSOSAlert(data);
+        if (data != null) {
+          _handleSOSAlert(data);
+        }
       });
 
       setState(() {
@@ -87,7 +90,8 @@ class _GuardianMapScreenState extends State<GuardianMapScreen> {
         _currentHeading = heading;
         _userStatus = 'Online';
         _lastUpdate = DateTime.now();
-        _address = 'Lat: ${lat.toStringAsFixed(6)}, Lng: ${lng.toStringAsFixed(6)}';
+        _address =
+            'Lat: ${lat.toStringAsFixed(6)}, Lng: ${lng.toStringAsFixed(6)}';
       });
 
       // Update marker
@@ -113,7 +117,8 @@ class _GuardianMapScreenState extends State<GuardianMapScreen> {
     try {
       bool? hasVibrator = await Vibration.hasVibrator();
       if (hasVibrator == true) {
-        Vibration.vibrate(pattern: [0, 500, 200, 500, 200, 500], amplitude: 255);
+        Vibration.vibrate(
+            pattern: [0, 500, 200, 500, 200, 500], amplitude: 255);
       }
     } catch (e) {
       debugPrint('Error vibrating: $e');
@@ -401,47 +406,6 @@ class _GuardianMapScreenState extends State<GuardianMapScreen> {
           ),
 
           const SizedBox(height: 16),
-
-          // Call/Message buttons
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    // TODO: Implement call feature
-                    _showErrorSnackbar('Call feature coming soon');
-                  },
-                  icon: const Icon(Icons.call),
-                  label: const Text('Call User'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    // TODO: Implement message feature
-                    _showErrorSnackbar('Message feature coming soon');
-                  },
-                  icon: const Icon(Icons.message),
-                  label: const Text('Message'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );

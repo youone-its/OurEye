@@ -219,6 +219,8 @@ class SocketService {
       return;
     }
 
+    // PENTING: Gunakan .on() yang persistent, bukan sekali listening
+    // Ini memungkinkan menerima SOS berkali-kali tanpa perlu re-subscribe
     _socket!.on('sos_alert', (data) {
       debugPrint('🚨 SOS Alert received: $data');
       
@@ -229,7 +231,7 @@ class SocketService {
       }
     });
 
-    debugPrint('✅ Subscribed to SOS alerts');
+    debugPrint('✅ Subscribed to SOS alerts (persistent listener)');
   }
 
   /// Unsubscribe from location updates

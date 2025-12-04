@@ -45,6 +45,11 @@ class _CameraScreenState extends State<CameraScreen> {
   // Audio
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // SOS Triple-Click Validation
+  int _sosClickCount = 0;
+  DateTime? _lastSOSClickTime;
+  Timer? _sosResetTimer;
+
   // Trial time
   int _trialMinutes = 1;
   int _trialSeconds = 0;
@@ -97,7 +102,8 @@ class _CameraScreenState extends State<CameraScreen> {
       debugPrint('✅ Joined topic: $userTopic');
 
       // Start periodic location updates (every 5 seconds)
-      _locationTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      _locationTimer =
+          Timer.periodic(const Duration(seconds: 5), (timer) async {
         try {
           final position = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.high,
@@ -114,7 +120,8 @@ class _CameraScreenState extends State<CameraScreen> {
             heading: position.heading,
           );
 
-          debugPrint('📍 Location published: ${position.latitude}, ${position.longitude}');
+          debugPrint(
+              '📍 Location published: ${position.latitude}, ${position.longitude}');
         } catch (e) {
           debugPrint('⚠️ Error getting location: $e');
         }
@@ -226,6 +233,64 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
+  /// =========== FUNGSI BARU: Validasi 3 Klik SOS ===========
+  Future<void> _handleSOSClick() async {
+    if (_tts == null) {
+      debugPrint('TTS not initialized');
+      return;
+    }
+
+    final now = DateTime.now();
+
+    // CEK: Apakah timeout > 3 detik sejak klik terakhir?
+    if (_lastSOSClickTime != null &&
+        now.difference(_lastSOSClickTime!).inSeconds > 3) {
+      _sosClickCount = 0;
+      debugPrint('🔴 SOS Click Reset: Counter reset karena timeout > 3 detik');
+    }
+
+    // INCREMENT counter klik
+    _sosClickCount++;
+    _lastSOSClickTime = now;
+
+    // Cancel timer sebelumnya jika ada
+    _sosResetTimer?.cancel();
+
+    // Set timer auto-reset setelah 3 detik
+    _sosResetTimer = Timer(const Duration(seconds: 3), () {
+      _sosClickCount = 0;
+      _lastSOSClickTime = null;
+      debugPrint(
+          '🔴 SOS Click Auto-Reset: Counter direset otomatis setelah 3 detik');
+    });
+
+    debugPrint('🔴 SOS Click: $_sosClickCount/3');
+
+    // Peringatan suara berdasarkan jumlah klik
+    if (_sosClickCount == 1) {
+      await _tts!.speak(
+        "S O S. Klik dua kali lagi untuk konfirmasi. Klik pertama terdeteksi.",
+      );
+      debugPrint('🔴 Suara: Klik 1 dari 3');
+    } else if (_sosClickCount == 2) {
+      await _tts!.speak(
+        "Klik kedua terdeteksi. Satu klik lagi untuk mengirim S O S.",
+      );
+      debugPrint('🔴 Suara: Klik 2 dari 3');
+    } else if (_sosClickCount >= 3) {
+      // Cancel timer saat akan eksekusi
+      _sosResetTimer?.cancel();
+
+      // RESET counter setelah 3 klik
+      _sosClickCount = 0;
+      _lastSOSClickTime = null;
+      debugPrint('🔴 SOS Confirmed: 3 klik tercapai, mengirim SOS!');
+
+      // Jalankan SOS yang sebenarnya
+      await _handleSOS();
+    }
+  }
+
   Future<void> _toggleListening() async {
     if (_speech == null || _tts == null) {
       debugPrint('Speech or TTS not initialized');
@@ -310,6 +375,8 @@ class _CameraScreenState extends State<CameraScreen> {
       final socketService = SocketService();
       await socketService.connect();
 
+      debugPrint('🔄 Socket ready for SOS broadcast. Connected: ${socketService.isConnected}');
+
       // Kirim SOS ke topic masing-masing guardian
       for (final guardianId in guardianIds) {
         socketService.publishSOS(
@@ -324,6 +391,11 @@ class _CameraScreenState extends State<CameraScreen> {
         );
         debugPrint('🚨 SOS sent to wali_$guardianId');
       }
+
+      // PENTING: Tunggu sebentar untuk memastikan SOS terkirim
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      debugPrint('🚨 SOS broadcast complete');
 
       // Save to database
       if (position != null) {
@@ -534,6 +606,7 @@ class _CameraScreenState extends State<CameraScreen> {
   void dispose() {
     _trialTimer?.cancel();
     _locationTimer?.cancel();
+    _sosResetTimer?.cancel();
     _cameraController?.dispose();
     _speech?.stop();
     _tts?.stop();
@@ -629,7 +702,7 @@ class _CameraScreenState extends State<CameraScreen> {
               // ========== TOMBOL KANAN: SOS ==========
               Expanded(
                 child: GestureDetector(
-                  onTap: _isProcessing ? null : _handleSOS,
+                  onTap: _isProcessing ? null : _handleSOSClick,
                   child: Container(
                     color: Colors.transparent,
                     child: Stack(

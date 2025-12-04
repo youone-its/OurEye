@@ -49,17 +49,19 @@ class _WaliDashboardScreenState extends State<WaliDashboardScreen> {
       // Connect to socket
       await _socketService.connect();
 
-      // Auto-join guardian's own topic for SOS alerts
-      final guardianTopic = 'wali_$_guardianId';
-      _socketService.joinTopic(guardianTopic);
-      debugPrint('👂 Guardian standby on topic: $guardianTopic');
-
-      // Subscribe to SOS alerts
+      // PENTING: Subscribe ke SOS alerts SEBELUM join topic
+      // Ini memastikan listener siap menangkap SOS event
       _socketService.subscribeSOS((data) {
         if (data != null) {
           _handleSOSAlert(data);
         }
       });
+      debugPrint('✅ SOS alert listener ready');
+
+      // SEKARANG join guardian's own topic untuk menerima SOS
+      final guardianTopic = 'wali_$_guardianId';
+      _socketService.joinTopic(guardianTopic);
+      debugPrint('👂 Guardian standby on topic: $guardianTopic');
 
       setState(() {
         _isMonitoring = true;
