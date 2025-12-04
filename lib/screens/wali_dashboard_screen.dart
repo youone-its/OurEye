@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:vibration/vibration.dart';
+import '../services/socket_service.dart';
 import 'initial_splash_screen.dart';
 import 'select_user_screen.dart';
 import 'manage_users_screen.dart';
@@ -13,21 +16,162 @@ class WaliDashboardScreen extends StatefulWidget {
 
 class _WaliDashboardScreenState extends State<WaliDashboardScreen> {
   String _username = '';
+  final SocketService _socketService = SocketService();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  int? _guardianId;
+  bool _isMonitoring = false;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _initializeSOSMonitoring();
   }
 
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _username = prefs.getString('username') ?? 'Wali';
+      _guardianId = prefs.getInt('user_id');
     });
   }
 
+  Future<void> _initializeSOSMonitoring() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _guardianId = prefs.getInt('user_id');
+
+      if (_guardianId == null) {
+        debugPrint('⚠️ Guardian ID not found');
+        return;
+      }
+
+      // Connect to socket
+      await _socketService.connect();
+
+      // Auto-join guardian's own topic for SOS alerts
+      final guardianTopic = 'wali_$_guardianId';
+      _socketService.joinTopic(guardianTopic);
+      debugPrint('👂 Guardian standby on topic: $guardianTopic');
+
+      // Subscribe to SOS alerts
+      _socketService.subscribeSOS((data) {
+        if (data != null) {
+          _handleSOSAlert(data);
+        }
+      });
+
+      setState(() {
+        _isMonitoring = true;
+      });
+
+      debugPrint('✅ SOS monitoring active for wali_$_guardianId');
+    } catch (e) {
+      debugPrint('❌ Error initializing SOS monitoring: $e');
+    }
+  }
+
+  Future<void> _handleSOSAlert(Map<String, dynamic> data) async {
+    debugPrint('🚨 SOS ALERT RECEIVED: $data');
+
+    // Play alarm sound
+    try {
+      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
+      await _audioPlayer.play(AssetSource('sounds/alarm.wav'));
+    } catch (e) {
+      debugPrint('Error playing alarm: $e');
+    }
+
+    // Vibrate
+    try {
+      bool? hasVibrator = await Vibration.hasVibrator();
+      if (hasVibrator == true) {
+        Vibration.vibrate(pattern: [0, 500, 200, 500, 200, 500], amplitude: 255);
+      }
+    } catch (e) {
+      debugPrint('Error vibrating: $e');
+    }
+
+    // Show SOS dialog
+    if (mounted) {
+      _showSOSDialog(data);
+    }
+  }
+
+  void _showSOSDialog(Map<String, dynamic> data) {
+    final userId = data['userId']?.toString() ?? 'Unknown';
+    final location = data['location'] ?? {};
+    final lat = location['lat'];
+    final lng = location['lng'];
+    final address = location['address'] ?? 'Unknown location';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.red,
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.white, size: 32),
+            SizedBox(width: 12),
+            Text(
+              'SOS ALERT!',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'User ID: $userId',
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Location: $address',
+              style: TextStyle(color: Colors.white),
+            ),
+            if (lat != null && lng != null)
+              Text(
+                'Coordinates: $lat, $lng',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _audioPlayer.stop();
+              Vibration.cancel();
+              Navigator.pop(context);
+            },
+            child: Text('DISMISS', style: TextStyle(color: Colors.white)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _audioPlayer.stop();
+              Vibration.cancel();
+              Navigator.pop(context);
+              // TODO: Navigate to map showing user location
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.white),
+            child: Text('VIEW MAP', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleLogout() async {
+    // Cleanup socket
+    if (_guardianId != null) {
+      _socketService.leaveTopic('wali_$_guardianId');
+    }
+    _socketService.disconnect();
+    _audioPlayer.dispose();
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_logged_in', false);
     await prefs.remove('user_email');
@@ -39,6 +183,15 @@ class _WaliDashboardScreenState extends State<WaliDashboardScreen> {
         (route) => false,
       );
     }
+  }
+
+  @override
+  void dispose() {
+    if (_guardianId != null) {
+      _socketService.leaveTopic('wali_$_guardianId');
+    }
+    _audioPlayer.dispose();
+    super.dispose();
   }
 
   @override
@@ -93,6 +246,34 @@ class _WaliDashboardScreenState extends State<WaliDashboardScreen> {
                     style: TextStyle(
                       color: Colors.white70,
                       fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // SOS Monitoring Status
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _isMonitoring ? Colors.green : Colors.orange,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isMonitoring ? Icons.wifi : Icons.wifi_off,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _isMonitoring ? 'SOS Monitoring Active' : 'Connecting...',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

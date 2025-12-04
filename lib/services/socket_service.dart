@@ -130,11 +130,11 @@ class SocketService {
     debugPrint('📍 Location published: $data');
   }
 
-  /// Publish SOS alert with full payload (for User app)
+  /// Publish SOS alert to guardian's topic (for User app)
   void publishSOS({
     required String userId,
-    required String topic,
-    List<int>? guardianIds,
+    required int guardianId,
+    required String guardianTopic,
     double? latitude,
     double? longitude,
     String? address,
@@ -147,8 +147,8 @@ class SocketService {
     final data = {
       'type': 'SOS',
       'userId': userId,
-      'topic': topic,
-      'guardianIds': guardianIds ?? [],
+      'guardianId': guardianId,
+      'topic': guardianTopic,
       'location': {
         'lat': latitude,
         'lng': longitude,
@@ -158,9 +158,9 @@ class SocketService {
       'timestampISO': DateTime.now().toIso8601String(),
     };
 
-    // Emit to topic channel (topic-based pub/sub)
+    // Emit SOS to guardian's topic
     _socket!.emit('sos_alert', data);
-    debugPrint('🚨 SOS Alert published to topic "$topic": $data');
+    debugPrint('🚨 SOS Alert published to $guardianTopic: $data');
   }
 
   /// Join a topic/room to receive updates from specific user

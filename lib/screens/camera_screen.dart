@@ -310,16 +310,20 @@ class _CameraScreenState extends State<CameraScreen> {
       final socketService = SocketService();
       await socketService.connect();
 
-      socketService.publishSOS(
-        userId: userId.toString(),
-        topic: userTopic,
-        guardianIds: guardianIds,
-        latitude: position?.latitude,
-        longitude: position?.longitude,
-        address: position != null
-            ? '${position.latitude}, ${position.longitude}'
-            : 'Unknown location',
-      );
+      // Kirim SOS ke topic masing-masing guardian
+      for (final guardianId in guardianIds) {
+        socketService.publishSOS(
+          userId: userId.toString(),
+          guardianId: guardianId,
+          guardianTopic: 'wali_$guardianId',
+          latitude: position?.latitude,
+          longitude: position?.longitude,
+          address: position != null
+              ? '${position.latitude}, ${position.longitude}'
+              : 'Unknown location',
+        );
+        debugPrint('🚨 SOS sent to wali_$guardianId');
+      }
 
       // Save to database
       if (position != null) {

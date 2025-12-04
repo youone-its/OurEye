@@ -101,26 +101,20 @@ io.on('connection', (socket) => {
 
   /**
    * SOS Alert dari User
-   * Payload: { type, userId, topic, guardianIds, location, timestamp }
+   * Payload: { type, userId, guardianId, topic, location, timestamp }
+   * Topic format: wali_{guardianId}
    */
   socket.on('sos_alert', (data) => {
-    console.log(`🚨 SOS Alert from user ${data.userId}:`, data);
+    console.log(`🚨 SOS Alert from user ${data.userId} to guardian ${data.guardianId}:`, data);
 
-    // Broadcast ke specific guardians (jika guardianIds provided)
-    if (data.guardianIds && Array.isArray(data.guardianIds)) {
-      data.guardianIds.forEach(guardianId => {
-        const guardianSocketId = activeUsers.get(guardianId.toString());
-        if (guardianSocketId) {
-          io.to(guardianSocketId).emit('sos_alert', data);
-          console.log(`📢 SOS sent to guardian ${guardianId}`);
-        }
-      });
-    }
-
-    // JUGA broadcast ke semua yang subscribe ke topic (fallback)
+    // Broadcast ke topic wali (semua yang subscribe ke wali_X akan terima)
     if (data.topic) {
       socket.to(data.topic).emit('sos_alert', data);
       console.log(`📢 SOS broadcasted to topic: ${data.topic}`);
+      
+      // Hitung berapa subscriber yang terima
+      const subscriberCount = topicSubscribers.has(data.topic) ? topicSubscribers.get(data.topic).size : 0;
+      console.log(`👥 ${subscriberCount} subscribers in ${data.topic}`);
     }
 
     // Save to database (TODO: integrate PostgreSQL)
